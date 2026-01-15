@@ -37,7 +37,6 @@ Saves underwriters' time when reviewing multiple loan applications on who to qui
 =======
 - 60-month loans are significantly riskier than 36-month loans
 - Small business loans have the highest default rate
->>>>>>> e86d8ee00edd2303caafdd92219d8eb4d26b62dc
 - Verified income correlates with MORE defaults (selection bias)
 - Model achieves 62% recall on defaults
 
@@ -68,5 +67,6 @@ okonkwo.employee@gmail.com
 =======
 
 okonkwo.employee@gmail.com
+
 
 
