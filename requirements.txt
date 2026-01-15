@@ -1,1 +1,17 @@
+pandas 
+numpy 
+matplotlib 
+seaborn 
+scikit-learn 
+openpyxl
+notebook
+nbconvert
+tabulate
+sqlalchemy 
+dotenv
+xgboost
 streamlit
+pandas
+joblib
+scikit-learn
+optbinning
