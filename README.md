@@ -1,16 +1,16 @@
 # Credit Risk Loan Predictor
 
 ## Overview
+<<<<<<< HEAD
+Brief description of what the project does and why it matters.
 
-Used for underwriters to quickly assess whether to approve a loan, dismiss a loan or review further based on the probability of default and the expected loss based on the probability of default and recovery. 
-
+## Live Demo
+[Link to Streamlit app]
 
 ## Business Problem
-
-Underwriters evaluating loan applications can quickly determine, based on certain features, the probability of loan default. 
-
-
-This takes input from the underwriter, estimates the probability that the applicant will default on their loan (expected loss given default rate of 50%), and recommends the applicant's risk category. 
+What problem does this solve? Who is the user? (Underwriters evaluating loan applications)
+=======
+This takes inputs from the underwriter, recommends the probability that the applicant will default on their loan (expected loss given default rate of 50%), and makes a recommendation on the applicant's risk category. 
 
 ## Live Demo
 [https://probabilitydefaultcalculator.streamlit.app/]
@@ -18,7 +18,7 @@ This takes input from the underwriter, estimates the probability that the applic
 ## Business Problem
 
 Saves underwriters' time when reviewing multiple loan applications on who to quickly approve, who to deny immediately, and who needs further review based on bank guidelines for conservative or aggressive approaches to lending. 
-
+>>>>>>> e86d8ee00edd2303caafdd92219d8eb4d26b62dc
 
 ## Data
 - Source: Lending Club via Kaggle
@@ -27,12 +27,12 @@ Saves underwriters' time when reviewing multiple loan applications on who to qui
 
 ## Methodology
 1. Data cleaning (SQL)
-2. Feature engineering 
-3. Model selection : Logistic Regression 
+2. Feature engineering (OptBinning)
+3. Model selection (Logistic Regression vs XGBoost)
 4. Evaluation (Recall-focused for catching defaults)
 
 ## Key Findings
-
+<<<<<<< HEAD
 - 60-month loans are significantly riskier than 36-month
 - Small business loans have highest default rate
 =======
@@ -65,10 +65,10 @@ Saves underwriters' time when reviewing multiple loan applications on who to qui
 ## Contact
 Onyedikachukwu Okonkwo
 https://www.linkedin.com/in/onyedikachukwu-okonkwo/
-
+<<<<<<< HEAD
 okonkwo.employee@gmail.com
 =======
 
 okonkwo.employee@gmail.com
 
-
+>>>>>>> e86d8ee00edd2303caafdd92219d8eb4d26b62dc
