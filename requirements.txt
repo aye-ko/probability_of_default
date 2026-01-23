@@ -3,3 +3,4 @@ optbinning==0.20.0
 pandas<3.0.0
 streamlit==1.52.2
 ortools
+

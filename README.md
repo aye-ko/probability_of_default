@@ -1,16 +1,15 @@
 # Credit Risk Loan Predictor
 
 ## Overview
-<<<<<<< HEAD
-Brief description of what the project does and why it matters.
+
+Underwriters enter data and get a quick rundown on whether a loan should be approved, denied, or sent for further review based on the probability of default and the estimated loss to the bank.
 
 ## Live Demo
-[Link to Streamlit app]
+[[Link to Streamlit app](https://probabilitydefaultcalculator.streamlit.app/)]
 
 ## Business Problem
-What problem does this solve? Who is the user? (Underwriters evaluating loan applications)
-=======
-This takes inputs from the underwriter, recommends the probability that the applicant will default on their loan (expected loss given default rate of 50%), and makes a recommendation on the applicant's risk category. 
+
+This takes input from the underwriter, estimates the probability that the applicant will default on their loan (expected loss given default rate of 50%), and recommends the applicant's risk category. 
 
 ## Live Demo
 [https://probabilitydefaultcalculator.streamlit.app/]
@@ -18,7 +17,7 @@ This takes inputs from the underwriter, recommends the probability that the appl
 ## Business Problem
 
 Saves underwriters' time when reviewing multiple loan applications on who to quickly approve, who to deny immediately, and who needs further review based on bank guidelines for conservative or aggressive approaches to lending. 
->>>>>>> e86d8ee00edd2303caafdd92219d8eb4d26b62dc
+
 
 ## Data
 - Source: Lending Club via Kaggle
@@ -33,12 +32,11 @@ Saves underwriters' time when reviewing multiple loan applications on who to qui
 
 ## Key Findings
 <<<<<<< HEAD
-- 60-month loans are significantly riskier than 36-month
-- Small business loans have highest default rate
+- 60-month loans are significantly riskier than 36-month loans
+- Small business loans have the highest default rate
 =======
 - 60-month loans are significantly riskier than 36-month loans
 - Small business loans have the highest default rate
->>>>>>> e86d8ee00edd2303caafdd92219d8eb4d26b62dc
 - Verified income correlates with MORE defaults (selection bias)
 - Model achieves 62% recall on defaults
 
@@ -65,10 +63,10 @@ Saves underwriters' time when reviewing multiple loan applications on who to qui
 ## Contact
 Onyedikachukwu Okonkwo
 https://www.linkedin.com/in/onyedikachukwu-okonkwo/
-<<<<<<< HEAD
 okonkwo.employee@gmail.com
 =======
 
 okonkwo.employee@gmail.com
 
->>>>>>> e86d8ee00edd2303caafdd92219d8eb4d26b62dc
+
+
