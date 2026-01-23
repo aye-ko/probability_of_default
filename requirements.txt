@@ -11,7 +11,7 @@ sqlalchemy
 dotenv
 xgboost
 streamlit
-pandas
 joblib
-scikit-learn
+altair<5
+
 optbinning
