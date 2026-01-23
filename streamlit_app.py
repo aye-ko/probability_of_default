@@ -86,7 +86,7 @@ def predict_new_loan(
 # load the pickle files into the app.py
 
 model = joblib.load('model.pkl')  # predicts probability of default
-scaler = joblib.load('scaler.pkl') # sccales numeric inputs into z-scores
+scaler = joblib.load('scaler.pkl') # scales numeric inputs into z-scores
 binner = joblib.load('binner.pkl') # bins total_il_high_credit_limit
 imputer = joblib.load('imputer.pkl') # imputes missing values
 columns = joblib.load('columns.pkl') # esnures correct columnn order
