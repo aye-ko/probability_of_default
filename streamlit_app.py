@@ -107,15 +107,16 @@ customer_email = st.text_input("Customer Email", placeholder="xxx@xxx.xxx", max_
 
 # numeric inputs
 loan_amnt = st.number_input("Loan Amount", min_value=500, max_value=50000, placeholder=10000, step=500)
-monthly_debt = st.number_input("Monthly Debt", min_value=0, max_value=20000, placeholder=500, step=500,)
+monthly_debt = st.number_input("Monthly Bills and Spending", min_value=0, max_value=20000, placeholder=500, step=500,)
 fico_range_low = st.number_input("FICO Score", min_value=300, max_value=850, placeholder=680, step=1)
 annual_inc = st.number_input("Annual Income", min_value=1000, max_value=1000000, placeholder=60000, step=1000)
 dti = monthly_debt / (annual_inc / 12) * 100 if annual_inc > 0 else 0
-revol_util = st.number_input("Revolving Line Utilization Rate (%)", min_value=0.0, max_value=200.0, placeholder=30.0, step=0.1)
 pub_rec_bankruptcies = st.number_input("Number of Public Record Bankruptcies", min_value=0, max_value=10, placeholder=0, step=1)
 tax_liens = st.number_input("Number of Tax Liens", min_value=0, max_value=10, placeholder=0, step=1)
+credit_card_debt = st.number_input("Credit Card Balance", min_value=0, max_value=1000000, placeholder=1000, step=100)
+credit_card_limit = st.number_input("Credit Card Limit", min_value=0, max_value=1000000, placeholder=5000, step=100)
 total_il_high_credit_limit = st.number_input("Total Installment Credit Limit", min_value=0, max_value=1000000, placeholder=20000, step=1000)
-
+revol_util = credit_card_debt / credit_card_limit * 100 if credit_card_limit > 0 else 0
 # drop downs for categorical inputs
 term = st.selectbox("Loan Term", options=["36 months", "60 months"])
 emp_length = st.selectbox("Employment Length", options=["< 1 year", "1 year", "2 years", "3 years", "4 years", "5 years", "6 years", "7 years", "8 years", "9 years", "10+ years","nan"])
