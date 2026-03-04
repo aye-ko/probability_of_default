@@ -2,7 +2,41 @@ import streamlit as st
 import pandas as pd
 import joblib
 from optbinning import OptimalBinning # for binning total_il_high_credit_limit
+from auth import login_user
+from firebase_admin_setup import verify_token
 import re # for email validation
+
+# Login 
+st.title("Credit Loan Risk Predictor")
+
+if "user" not in st.session_state:
+
+    email = st.text_input("Email")
+    password = st.text_input("Password", type="password")
+
+    if st.button("Login"):
+        user = login_user(email, password)
+
+        if user:
+            decoded = verify_token(user["idToken"])
+            if decoded:
+                st.session_state["user"] = decoded
+                st.success("Login successful")
+                st.rerun()
+            else:
+                st.error("Token verification failed")
+        else:
+            st.error("Invalid email or password")
+
+    st.stop()
+
+st.sidebar.success(f"Logged in as: {st.session_state['user']['email']}")
+
+if st.sidebar.button("Logout"):
+    del st.session_state["user"]
+    st.rerun()
+
+
 # Function to give recommendation based on probability of default
 def get_recommendation(prob_default):
     if prob_default <= 0.35:
