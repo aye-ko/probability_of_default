@@ -125,7 +125,7 @@ binner = joblib.load('binner.pkl') # bins total_il_high_credit_limit
 imputer = joblib.load('imputer.pkl') # imputes missing values
 columns = joblib.load('columns.pkl') # esnures correct columnn order
 numeric_cols = joblib.load('numeric_cols.pkl') # tells scaler which columns to scale
-
+X_sample = joblib.load('X_sample.pkl') # sample of X to use as baseline for SHAP
 # App Title
 
 st.title("Credit Risk Loan Prediction App")
@@ -172,6 +172,7 @@ if st.button("Predict"):
     elif len(customer_phone) < 10:
         st.error("Enter valid customer phone number.")
     else:
+        
         prob_default, expected_loss, recommendation = predict_new_loan(
             loan_amnt, dti, fico_range_low, annual_inc, revol_util,
             pub_rec_bankruptcies, tax_liens, total_il_high_credit_limit,
