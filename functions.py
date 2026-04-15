@@ -9,7 +9,7 @@ binner = joblib.load('binner.pkl') # bins total_il_high_credit_limit
 imputer = joblib.load('imputer.pkl') # imputes missing values
 columns = joblib.load('columns.pkl') # esnures correct columnn order
 numeric_cols = joblib.load('numeric_cols.pkl') # tells scaler which columns to scale
-X_sample = joblib.load('X_sample.pkl') # sample of X to use as baseline for SHAP
+#X_sample = joblib.load('X_sample.pkl') # sample of X to use as baseline for SHAP
 
 
 # Function to give recommendation
