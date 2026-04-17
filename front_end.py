@@ -6,16 +6,20 @@ from email.mime.multipart import MIMEMultipart
 import pandas as pd
 import joblib
 import re
+import uuid
 from supabase import create_client, Client
- 
+
+
 # --- Page Config ---
 st.set_page_config(page_title="LendGuard", page_icon="⚡", layout="wide")
- 
+
+
 # --- Supabase Client ---
-SUPABASE_URL = "https://ikmuhwmtkrvzgembhnsh.supabase.co"
+SUPABASE_URL = "https://ohvhzrjwqoiolfxikbei.supabase.co"
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
- 
+
+
 # --- Load ML Assets ---
 @st.cache_resource
 def load_ml_assets():
@@ -26,9 +30,11 @@ def load_ml_assets():
     columns = joblib.load('columns.pkl')
     numeric_cols = joblib.load('numeric_cols.pkl')
     return model, scaler, binner, imputer, columns, numeric_cols
- 
+
+
 model, scaler, binner, imputer, columns, numeric_cols = load_ml_assets()
- 
+
+
 # --- ML Helpers ---
 def get_recommendation(prob_default):
     if prob_default <= 0.35:
@@ -37,10 +43,12 @@ def get_recommendation(prob_default):
         return "Moderate Risk — Recommend Further Review"
     else:
         return "High Risk — Recommend Decline"
- 
+
+
 def calculate_expected_loss(loan_amnt, prob_default, lgd=0.50):
     return loan_amnt * prob_default * lgd
- 
+
+
 def predict_new_loan(
     loan_amnt, dti, fico_range_low, annual_inc, revol_util,
     pub_rec_bankruptcies, tax_liens, total_il_high_credit_limit,
@@ -54,64 +62,73 @@ def predict_new_loan(
     input_df['revol_util'] = revol_util
     input_df['pub_rec_bankruptcies'] = pub_rec_bankruptcies
     input_df['tax_liens'] = tax_liens
- 
+
     if term == "60 months":
         input_df['term_ 60 months'] = 1
- 
+
     emp_col = f'emp_length_{emp_length}'
     if emp_col in input_df.columns:
         input_df[emp_col] = 1
- 
+
     home_col = f'home_ownership_{home_ownership}'
     if home_col in input_df.columns:
         input_df[home_col] = 1
- 
+
     purpose_col = f'purpose_{purpose}'
     if purpose_col in input_df.columns:
         input_df[purpose_col] = 1
- 
+
     ver_col = f'verification_status_{verification_status}'
     if ver_col in input_df.columns:
         input_df[ver_col] = 1
- 
+
     til_bin = binner.transform(pd.Series([total_il_high_credit_limit]), metric='bins')[0]
     if til_bin == "[214.00, inf)":
         input_df['til_binned_[214.00, inf)'] = 1
     elif til_bin == "Missing":
         input_df['til_binned_Missing'] = 1
- 
+
     input_df = input_df.rename(columns={
         'emp_length_less_than_1_year': 'emp_length_< 1 year',
         'til_binned_214_plus': 'til_binned_[214.00, inf)'
     })
- 
+
     input_df[numeric_cols] = scaler.transform(input_df[numeric_cols])
     prob_default = model.predict_proba(input_df)[:, 1][0]
     expected_loss = calculate_expected_loss(loan_amnt, prob_default)
     recommendation = get_recommendation(prob_default)
     return prob_default, expected_loss, recommendation
- 
+
+
 # --- Supabase Helpers ---
+def generate_account_id():
+    return "CUST-" + str(uuid.uuid4())[:8].upper()
+
+
 def db_create_user(name, email, role):
     try:
+        account_id = generate_account_id() if role == "Customer" else None
         supabase.table("users").upsert({
             "name": name,
             "email": email,
             "role": role,
+            "account_id": account_id,
         }).execute()
-        return True
+        return account_id
     except Exception as e:
-        print(f"DB user error: {e}")
-        return False
- 
+        st.error(f"DB user error: {e}")
+        return None
+
+
 def db_get_user(email):
     try:
         res = supabase.table("users").select("*").eq("email", email).execute()
         return res.data[0] if res.data else None
     except Exception as e:
-        print(f"DB get user error: {e}")
+        st.error(f"DB get user error: {e}")
         return None
- 
+
+
 def db_get_underwriter_email():
     try:
         res = supabase.table("users").select("email").eq("role", "Underwriter").limit(1).execute()
@@ -119,7 +136,8 @@ def db_get_underwriter_email():
     except Exception as e:
         print(f"DB underwriter email error: {e}")
         return None
- 
+
+
 def db_log_activity(user_email, message):
     try:
         supabase.table("activity_logs").insert({
@@ -128,7 +146,8 @@ def db_log_activity(user_email, message):
         }).execute()
     except Exception as e:
         print(f"DB log error: {e}")
- 
+
+
 def db_get_activity_logs(user_email=None):
     try:
         query = supabase.table("activity_logs").select("*").order("created_at", desc=True).limit(20)
@@ -139,15 +158,17 @@ def db_get_activity_logs(user_email=None):
     except Exception as e:
         print(f"DB get logs error: {e}")
         return []
- 
+
+
 def db_save_application(app_data):
     try:
         supabase.table("applications").insert(app_data).execute()
         return True
     except Exception as e:
-        print(f"DB save app error: {e}")
+        st.error(f"DB save app error: {e}")
         return False
- 
+
+
 def db_get_applications():
     try:
         res = supabase.table("applications").select("*").order("created_at", desc=True).execute()
@@ -155,14 +176,80 @@ def db_get_applications():
     except Exception as e:
         print(f"DB get apps error: {e}")
         return []
- 
+
+
+def db_get_portfolio_metrics():
+    try:
+        apps = supabase.table("application").select(
+            "loan_amnt, dti, fico_range_low, annual_inc, revol_util, purpose, home_ownership"
+        ).execute().data or []
+
+        decisions = supabase.table("decision").select(
+            "is_approved, application_id"
+        ).execute().data or []
+
+        if not apps:
+            return None
+
+        df_apps = pd.DataFrame(apps)
+        df_dec = pd.DataFrame(decisions)
+
+        total_apps = len(df_apps)
+        avg_loan = df_apps["loan_amnt"].mean()
+        avg_dti = df_apps["dti"].mean()
+        avg_fico = df_apps["fico_range_low"].mean()
+        avg_income = df_apps["annual_inc"].mean()
+        avg_revol = df_apps["revol_util"].mean()
+
+        approval_rate = None
+        if not df_dec.empty and "is_approved" in df_dec.columns:
+            approval_rate = df_dec["is_approved"].mean() * 100
+
+        top_purpose = None
+        if "purpose" in df_apps.columns:
+            top_purpose = df_apps["purpose"].value_counts().idxmax()
+
+        return {
+            "total_apps": total_apps,
+            "avg_loan": avg_loan,
+            "avg_dti": avg_dti,
+            "avg_fico": avg_fico,
+            "avg_income": avg_income,
+            "avg_revol": avg_revol,
+            "approval_rate": approval_rate,
+            "top_purpose": top_purpose,
+        }
+    except Exception as e:
+        print(f"Portfolio metrics error: {e}")
+        return None
+
+
 def db_get_next_app_id():
     try:
         res = supabase.table("applications").select("id").execute()
         return f"APP-{len(res.data) + 1:03}" if res.data else "APP-001"
     except:
         return "APP-001"
- 
+
+
+def db_update_application_status(app_id, new_status):
+    try:
+        supabase.table("applications").update({"status": new_status}).eq("id", app_id).execute()
+        return True
+    except Exception as e:
+        st.error(f"Update error: {e}")
+        return False
+
+
+def db_delete_application(app_id):
+    try:
+        supabase.table("applications").delete().eq("id", app_id).execute()
+        return True
+    except Exception as e:
+        st.error(f"Delete error: {e}")
+        return False
+
+
 # --- Email Helpers ---
 def send_email(to_email, subject, body):
     try:
@@ -180,22 +267,24 @@ def send_email(to_email, subject, body):
     except Exception as e:
         print(f"Email error: {e}")
         return False
- 
+
+
 def send_welcome_email(name, email, role):
     subject = "Welcome to LendGuard ⚡"
     body = f"""
-    <html><body style="font-family: Arial, sans-serif; background-color: #f4f4f4; padding: 20px;">
-        <div style="max-width: 500px; margin: auto; background: white; border-radius: 12px; padding: 30px;">
-            <h1 style="color: #1F3864;">⚡ LendGuard</h1>
-            <h2>Welcome, {name}!</h2>
-            <p>Your account has been created successfully as a <strong>{role}</strong>.</p>
-            <p>You can now log in and access your dashboard.</p>
-            <br><p style="color: #888;">If you did not create this account, please ignore this email.</p>
-        </div>
-    </body></html>
-    """
+<html><body style="font-family: Arial, sans-serif; background-color: #f4f4f4; padding: 20px;">
+<div style="max-width: 500px; margin: auto; background: white; border-radius: 12px; padding: 30px;">
+<h1 style="color: #1F3864;">⚡ LendGuard</h1>
+<h2>Welcome, {name}!</h2>
+<p>Your account has been created successfully as a <strong>{role}</strong>.</p>
+<p>You can now log in and access your dashboard.</p>
+<br><p style="color: #888;">If you did not create this account, please ignore this email.</p>
+</div>
+</body></html>
+"""
     return send_email(email, subject, body)
- 
+
+
 def send_risk_result_to_underwriter(
     underwriter_email, app_id, customer_name, customer_id,
     customer_phone, customer_email, loan_amnt, dti,
@@ -207,45 +296,61 @@ def send_risk_result_to_underwriter(
         risk_color, risk_label = "#f59e0b", "MODERATE RISK"
     else:
         risk_color, risk_label = "#ef4444", "HIGH RISK"
- 
+
     subject = f"⚡ New Loan Application [{risk_label}] — {app_id}"
     body = f"""
-    <html><body style="font-family: Arial, sans-serif; background-color: #f4f4f4; padding: 20px;">
-        <div style="max-width: 580px; margin: auto; background: white; border-radius: 12px; padding: 30px;">
-            <h1 style="color: #1F3864;">⚡ LendGuard</h1>
-            <h2>New Loan Application — {app_id}</h2>
-            <h3 style="border-bottom: 1px solid #eee; padding-bottom: 8px;">👤 Customer Information</h3>
-            <p><strong>Name:</strong> {customer_name}</p>
-            <p><strong>Customer ID:</strong> {customer_id}</p>
-            <p><strong>Phone:</strong> {customer_phone}</p>
-            <p><strong>Email:</strong> {customer_email}</p>
-            <h3 style="border-bottom: 1px solid #eee; padding-bottom: 8px;">💰 Loan Details</h3>
-            <p><strong>Loan Amount:</strong> ${loan_amnt:,.0f}</p>
-            <p><strong>Debt-to-Income Ratio:</strong> {dti:.1f}%</p>
-            <h3 style="border-bottom: 1px solid #eee; padding-bottom: 8px;">📊 Risk Assessment</h3>
-            <p><strong>Probability of Default:</strong> {prob_default:.2%}</p>
-            <p><strong>Estimated Loss:</strong> ${expected_loss:,.2f}</p>
-            <p><strong>Recommendation:</strong> <span style="color: {risk_color}; font-weight: bold;">{recommendation}</span></p>
-            <div style="margin-top: 24px; padding: 16px; border-radius: 8px; background: {risk_color}22; border-left: 4px solid {risk_color};">
-                <strong style="color: {risk_color};">{risk_label}</strong>
-            </div>
-            <br><p style="color: #888; font-size: 12px;">Log in to LendGuard to view the full application and take action.</p>
-        </div>
-    </body></html>
-    """
+<html><body style="font-family: Arial, sans-serif; background-color: #f4f4f4; padding: 20px;">
+<div style="max-width: 580px; margin: auto; background: white; border-radius: 12px; padding: 30px;">
+<h1 style="color: #1F3864;">⚡ LendGuard</h1>
+<h2>New Loan Application — {app_id}</h2>
+<h3 style="border-bottom: 1px solid #eee; padding-bottom: 8px;">👤 Customer Information</h3>
+<p><strong>Name:</strong> {customer_name}</p>
+<p><strong>Customer ID:</strong> {customer_id}</p>
+<p><strong>Phone:</strong> {customer_phone}</p>
+<p><strong>Email:</strong> {customer_email}</p>
+<h3 style="border-bottom: 1px solid #eee; padding-bottom: 8px;">💰 Loan Details</h3>
+<p><strong>Loan Amount:</strong> ${loan_amnt:,.0f}</p>
+<p><strong>Debt-to-Income Ratio:</strong> {dti:.1f}%</p>
+<h3 style="border-bottom: 1px solid #eee; padding-bottom: 8px;">📊 Risk Assessment</h3>
+<p><strong>Probability of Default:</strong> {prob_default:.2%}</p>
+<p><strong>Estimated Loss:</strong> ${expected_loss:,.2f}</p>
+<p><strong>Recommendation:</strong> <span style="color: {risk_color}; font-weight: bold;">{recommendation}</span></p>
+<div style="margin-top: 24px; padding: 16px; border-radius: 8px; background: {risk_color}22; border-left: 4px solid {risk_color};">
+<strong style="color: {risk_color};">{risk_label}</strong>
+</div>
+<br><p style="color: #888; font-size: 12px;">Log in to LendGuard to view the full application and take action.</p>
+</div>
+</body></html>
+"""
     return send_email(underwriter_email, subject, body)
- 
+
+
 # --- Session State ---
 if "screen" not in st.session_state:
     st.session_state.screen = "welcome"
 if "current_user" not in st.session_state:
     st.session_state.current_user = None
- 
+if "supabase_session" not in st.session_state:
+    st.session_state.supabase_session = None
+
+
 def log_activity(message):
     user = st.session_state.current_user
     email = user["email"] if user else "system"
     db_log_activity(email, message)
- 
+
+
+def logout():
+    try:
+        supabase.auth.sign_out()
+    except:
+        pass
+    st.session_state.current_user = None
+    st.session_state.supabase_session = None
+    st.session_state.screen = "welcome"
+    st.rerun()
+
+
 # --- Welcome Screen ---
 def welcome_screen():
     st.title("LendGuard")
@@ -260,7 +365,8 @@ def welcome_screen():
         if st.button("Create Account", use_container_width=True):
             st.session_state.screen = "signup"
             st.rerun()
- 
+
+
 # --- Signup Screen ---
 def signup_screen():
     st.title("LendGuard")
@@ -277,18 +383,35 @@ def signup_screen():
         elif "@" not in email:
             st.error("Enter a valid email address.")
         else:
-            db_create_user(name, email, role)
-            st.session_state.current_user = {"name": name, "email": email, "role": role}
-            log_activity("Account created successfully")
-            log_activity(f"Joined as {role}")
-            sent = send_welcome_email(name, email, role)
-            log_activity("Welcome email sent ✅" if sent else "Welcome email failed ⚠️")
-            st.session_state.screen = "dashboard"
-            st.rerun()
+            try:
+                auth_response = supabase.auth.sign_up({
+                    "email": email,
+                    "password": password
+                })
+                if auth_response.user:
+                    account_id = db_create_user(name, email, role)
+                    st.session_state.current_user = {
+                        "name": name,
+                        "email": email,
+                        "role": role,
+                        "account_id": account_id
+                    }
+                    st.session_state.supabase_session = auth_response.session
+                    log_activity("Account created successfully")
+                    log_activity(f"Joined as {role}")
+                    sent = send_welcome_email(name, email, role)
+                    log_activity("Welcome email sent ✅" if sent else "Welcome email failed ⚠️")
+                    st.session_state.screen = "dashboard"
+                    st.rerun()
+                else:
+                    st.error("Signup failed. Please try again.")
+            except Exception as e:
+                st.error(f"Signup error: {e}")
     if st.button("Already have an account? Log in"):
         st.session_state.screen = "login"
         st.rerun()
- 
+
+
 # --- Login Screen ---
 def login_screen():
     st.title("LendGuard")
@@ -301,23 +424,39 @@ def login_screen():
         elif "@" not in email:
             st.error("Enter a valid email address.")
         else:
-            user = db_get_user(email)
-            if user:
-                st.session_state.current_user = {
-                    "name": user["name"],
-                    "email": user["email"],
-                    "role": user["role"]
-                }
-            else:
-                st.error("No account found with that email. Please sign up first.")
-                return
-            log_activity(f"Logged in as {email}")
-            st.session_state.screen = "dashboard"
-            st.rerun()
+            try:
+                auth_response = supabase.auth.sign_in_with_password({
+                    "email": email,
+                    "password": password
+                })
+                if auth_response.user:
+                    user = db_get_user(email)
+                    if user:
+                        st.session_state.current_user = {
+                            "name": user["name"],
+                            "email": user["email"],
+                            "role": user["role"],
+                            "account_id": user.get("account_id"),
+                        }
+                    else:
+                        st.session_state.current_user = {
+                            "name": email.split("@")[0],
+                            "email": email,
+                            "role": "Customer"
+                        }
+                    st.session_state.supabase_session = auth_response.session
+                    log_activity(f"Logged in as {email}")
+                    st.session_state.screen = "dashboard"
+                    st.rerun()
+                else:
+                    st.error("Invalid email or password.")
+            except Exception as e:
+                st.error(f"Login error: {e}")
     if st.button("No account yet? Sign up"):
         st.session_state.screen = "signup"
         st.rerun()
- 
+
+
 # --- Dashboard Router ---
 def dashboard_screen():
     role = st.session_state.current_user.get("role", "Customer")
@@ -325,18 +464,21 @@ def dashboard_screen():
         underwriter_dashboard()
     else:
         customer_dashboard()
- 
+
+
 # --- Customer Dashboard ---
 def customer_dashboard():
     user = st.session_state.current_user
     st.title("LendGuard")
     st.markdown(f"### Good to see you, {user['name']} 👋")
- 
+    if user.get("account_id"):
+        st.caption(f"Account ID: {user['account_id']}")
+
     apps = db_get_applications()
     user_apps = [a for a in apps if a.get("submitted_by") == user["email"]]
     active_count = len([a for a in user_apps if a["status"] == "Active"])
     paid_count = len([a for a in user_apps if a["status"] == "Paid Off"])
- 
+
     col1, col2, col3 = st.columns(3)
     with col1:
         if st.button(f"📁 Loans: {paid_count}", use_container_width=True):
@@ -350,7 +492,7 @@ def customer_dashboard():
         if st.button("➕ Apply for a Loan", use_container_width=True):
             st.session_state.screen = "customer_application"
             st.rerun()
- 
+
     st.markdown("### Recent Activity")
     logs = db_get_activity_logs(user["email"])
     if logs:
@@ -359,44 +501,47 @@ def customer_dashboard():
             st.write(f"✅ {item['message']} — {ts}")
     else:
         st.write("No activity yet.")
- 
+
     if st.button("Log Out"):
-        st.session_state.current_user = None
-        st.session_state.screen = "welcome"
-        st.rerun()
- 
+        logout()
+
+
 # --- Customer Loan Application Screen ---
 def customer_application_screen():
     st.title("Credit Risk Loan Prediction App")
     st.write("This app predicts the probability of loan default based on user inputs.")
     st.write("Please fill in the following details to get Probability of Default, Estimated Loss and Recommendation:")
- 
-    # Customer information
+
     customer_name = st.text_input("Customer Name", placeholder="John Doe", max_chars=50)
     customer_id = st.text_input("Customer ID", placeholder="123456", max_chars=50)
     customer_phone = st.text_input("Customer Phone Number", placeholder="(123) 456-7890", max_chars=15)
     customer_email = st.text_input("Customer Email", placeholder="xxx@xxx.xxx", max_chars=50)
- 
-    # Numeric inputs
-    loan_amnt = st.number_input("Loan Amount", min_value=500, max_value=50000, placeholder=10000, step=500)
-    monthly_debt = st.number_input("Monthly Bills and Spending", min_value=0, max_value=20000, placeholder=500, step=500)
-    fico_range_low = st.number_input("FICO Score", min_value=300, max_value=850, placeholder=680, step=1)
-    annual_inc = st.number_input("Annual Income", min_value=1000, max_value=1000000, placeholder=60000, step=1000)
+
+    loan_amnt = st.number_input("Loan Amount", min_value=500, max_value=50000, value=10000, step=500)
+    monthly_debt = st.number_input("Monthly Bills and Spending", min_value=0, max_value=20000, value=500, step=500)
+    fico_range_low = st.number_input("FICO Score", min_value=300, max_value=850, value=680, step=1)
+    annual_inc = st.number_input("Annual Income", min_value=1000, max_value=1000000, value=60000, step=1000)
     dti = monthly_debt / (annual_inc / 12) * 100 if annual_inc > 0 else 0
-    pub_rec_bankruptcies = st.number_input("Number of Public Record Bankruptcies", min_value=0, max_value=10, placeholder=0, step=1)
-    tax_liens = st.number_input("Number of Tax Liens", min_value=0, max_value=10, placeholder=0, step=1)
-    credit_card_debt = st.number_input("Credit Card Balance", min_value=0, max_value=1000000, placeholder=1000, step=100)
-    credit_card_limit = st.number_input("Credit Card Limit", min_value=0, max_value=1000000, placeholder=5000, step=100)
-    total_il_high_credit_limit = st.number_input("Total Installment Credit Limit", min_value=0, max_value=1000000, placeholder=20000, step=1000)
+    pub_rec_bankruptcies = st.number_input("Number of Public Record Bankruptcies", min_value=0, max_value=10, value=0, step=1)
+    tax_liens = st.number_input("Number of Tax Liens", min_value=0, max_value=10, value=0, step=1)
+    credit_card_debt = st.number_input("Credit Card Balance", min_value=0, max_value=1000000, value=1000, step=100)
+    credit_card_limit = st.number_input("Credit Card Limit", min_value=0, max_value=1000000, value=5000, step=100)
+    total_il_high_credit_limit = st.number_input("Total Installment Credit Limit", min_value=0, max_value=1000000, value=20000, step=1000)
     revol_util = credit_card_debt / credit_card_limit * 100 if credit_card_limit > 0 else 0
- 
-    # Dropdowns
+
     term = st.selectbox("Loan Term", options=["36 months", "60 months"])
-    emp_length = st.selectbox("Employment Length", options=["< 1 year", "1 year", "2 years", "3 years", "4 years", "5 years", "6 years", "7 years", "8 years", "9 years", "10+ years", "nan"])
+    emp_length = st.selectbox("Employment Length", options=[
+        "< 1 year", "1 year", "2 years", "3 years", "4 years", "5 years",
+        "6 years", "7 years", "8 years", "9 years", "10+ years", "nan"
+    ])
     home_ownership = st.selectbox("Home Ownership", options=["RENT", "OWN", "MORTGAGE", "OTHER"])
-    purpose = st.selectbox("Purpose of Loan", options=["debt_consolidation", "credit_card", "home_improvement", "major_purchase", "small_business", "car", "wedding", "medical", "moving", "vacation", "house", "educational", "renewable_energy", "other"])
+    purpose = st.selectbox("Purpose of Loan", options=[
+        "debt_consolidation", "credit_card", "home_improvement", "major_purchase",
+        "small_business", "car", "wedding", "medical", "moving", "vacation",
+        "house", "educational", "renewable_energy", "other"
+    ])
     verification_status = st.selectbox("Verification Status", options=["Verified", "Source Verified", "Not Verified"])
- 
+
     if st.button("Predict", use_container_width=True):
         email_pattern = r'^[\w\.-]+@[\w\.-]+\.\w+$'
         if not re.match(email_pattern, customer_email):
@@ -414,113 +559,206 @@ def customer_application_screen():
                     pub_rec_bankruptcies, tax_liens, total_il_high_credit_limit,
                     term, emp_length, home_ownership, purpose, verification_status
                 )
- 
-            # Show results to customer
-            st.subheader("Prediction Results:")
-            st.write(f"Probability of Default: {prob_default:.2%}")
-            st.write(f"Estimated Loss: ${expected_loss:.2f}")
-            st.write(f"Recommendation: {recommendation}")
- 
-            # Save to Supabase
-            app_id = db_get_next_app_id()
-            user = st.session_state.current_user
-            app_data = {
-                "id": app_id,
-                "applicant": customer_name,
-                "applicant_email": customer_email,
-                "applicant_phone": customer_phone,
-                "applicant_customer_id": customer_id,
-                "amount": loan_amnt,
-                "term": term,
-                "purpose": purpose,
-                "status": "Active",
-                "expected_return": 0.0,
-                "prob_default": round(float(prob_default), 4),
-                "expected_loss": round(float(expected_loss), 2),
-                "recommendation": recommendation,
-                "dti": round(dti, 2),
-                "submitted_by": user["email"],
-            }
-            db_save_application(app_data)
-            log_activity(f"Loan application {app_id} submitted")
- 
-            # Email underwriter
-            underwriter_email = db_get_underwriter_email()
-            if underwriter_email:
-                sent = send_risk_result_to_underwriter(
-                    underwriter_email, app_id, customer_name, customer_id,
-                    customer_phone, customer_email, loan_amnt, dti,
-                    prob_default, expected_loss, recommendation
-                )
-                log_activity("Risk report emailed to underwriter ✅" if sent else "Failed to email underwriter ⚠️")
-            else:
-                log_activity("No underwriter found in database ⚠️")
- 
+
+                app_id = db_get_next_app_id()
+                user = st.session_state.current_user
+                app_data = {
+                    "id": app_id,
+                    "applicant": customer_name,
+                    "applicant_email": customer_email,
+                    "applicant_phone": customer_phone,
+                    "applicant_customer_id": customer_id,
+                    "amount": loan_amnt,
+                    "term": term,
+                    "purpose": purpose,
+                    "status": "Active",
+                    "expected_return": 0.0,
+                    "prob_default": round(float(prob_default), 4),
+                    "expected_loss": round(float(expected_loss), 2),
+                    "recommendation": recommendation,
+                    "dti": round(dti, 2),
+                    "submitted_by": user["email"],
+                }
+                db_save_application(app_data)
+                log_activity(f"Loan application {app_id} submitted")
+
+                st.success("✅ Your application has been submitted successfully!")
+                st.info(f"**Application ID:** {app_id}\n\nOur team will review your application and get back to you shortly.")
+
+                underwriter_email = db_get_underwriter_email()
+                if underwriter_email:
+                    sent = send_risk_result_to_underwriter(
+                        underwriter_email, app_id, customer_name, customer_id,
+                        customer_phone, customer_email, loan_amnt, dti,
+                        prob_default, expected_loss, recommendation
+                    )
+                    log_activity("Risk report emailed to underwriter ✅" if sent else "Failed to email underwriter ⚠️")
+                else:
+                    log_activity("No underwriter found in database ⚠️")
+
     if st.button("← Back to Dashboard"):
         st.session_state.screen = "dashboard"
         st.rerun()
- 
+
+
 # --- Underwriter Dashboard ---
 def underwriter_dashboard():
     user = st.session_state.current_user
     st.title("LendGuard")
     st.markdown(f"### Welcome, {user['name']} 👋 — Underwriter Portal")
- 
+
     apps = db_get_applications()
     active_apps = [a for a in apps if a["status"] == "Active"]
     paid_apps = [a for a in apps if a["status"] == "Paid Off"]
-    avg_return = (sum(a.get("expected_return", 0) for a in apps) / len(apps)) if apps else 0
- 
-    col1, col2, col3, col4 = st.columns(4)
+    approved_apps = [a for a in apps if a["status"] == "Approved"]
+    denied_apps = [a for a in apps if a["status"] == "Denied"]
+
+    col1, col2, col3, col4, col5 = st.columns(5)
     col1.metric("Total Applications", len(apps))
     col2.metric("Active", len(active_apps))
-    col3.metric("Paid Off", len(paid_apps))
-    col4.metric("Avg Return", f"{avg_return:.1f}%")
- 
+    col3.metric("Approved", len(approved_apps))
+    col4.metric("Denied", len(denied_apps))
+    col5.metric("Paid Off", len(paid_apps))
+
     st.divider()
- 
-    if st.button("📋 View Submitted Applications", use_container_width=True):
+
+    if st.button("📋 View All Submitted Applications", use_container_width=True):
         st.session_state.screen = "all_applications"
         st.rerun()
- 
+
     st.divider()
- 
-    st.markdown("### ⚡ Active Applications")
+
+    st.markdown("### ⚡ Active Applications — Pending Review")
     if active_apps:
         for app in active_apps:
             label = f"{app['id']} — {app['applicant']} — ${app['amount']:,.0f}"
             with st.expander(label):
-                st.write(f"**Status:** {app['status']}")
-                st.write(f"**Loan Amount:** ${app['amount']:,.0f}")
-                st.write(f"**Term:** {app.get('term', 'N/A')}")
-                st.write(f"**Purpose:** {app.get('purpose', 'N/A')}")
-                if app.get("dti") is not None:
-                    st.write(f"**DTI:** {app['dti']}%")
-                if app.get("prob_default") is not None:
-                    st.write(f"**Probability of Default:** {app['prob_default']:.2%}")
-                    st.write(f"**Estimated Loss:** ${app['expected_loss']:,.2f}")
-                    st.write(f"**Recommendation:** {app['recommendation']}")
-                if app.get("applicant_email"):
-                    st.write(f"**Applicant Email:** {app['applicant_email']}")
-                if app.get("applicant_phone"):
-                    st.write(f"**Applicant Phone:** {app['applicant_phone']}")
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.write(f"**Status:** {app['status']}")
+                    st.write(f"**Loan Amount:** ${app['amount']:,.0f}")
+                    st.write(f"**Term:** {app.get('term', 'N/A')}")
+                    st.write(f"**Purpose:** {app.get('purpose', 'N/A')}")
+                    if app.get("dti") is not None:
+                        st.write(f"**DTI:** {app['dti']}%")
+                with col2:
+                    if app.get("prob_default") is not None:
+                        st.write(f"**Probability of Default:** {app['prob_default']:.2%}")
+                        st.write(f"**Estimated Loss:** ${app['expected_loss']:,.2f}")
+                        st.write(f"**Recommendation:** {app['recommendation']}")
+                    if app.get("applicant_email"):
+                        st.write(f"**Email:** {app['applicant_email']}")
+                    if app.get("applicant_phone"):
+                        st.write(f"**Phone:** {app['applicant_phone']}")
+
+                st.markdown("**Update Status:**")
+                c1, c2, c3, c4 = st.columns(4)
+                with c1:
+                    if st.button("✅ Approve", key=f"approve_{app['id']}"):
+                        if db_update_application_status(app["id"], "Approved"):
+                            log_activity(f"Application {app['id']} approved")
+                            st.success("Approved!")
+                            st.rerun()
+                with c2:
+                    if st.button("❌ Deny", key=f"deny_{app['id']}"):
+                        if db_update_application_status(app["id"], "Denied"):
+                            log_activity(f"Application {app['id']} denied")
+                            st.success("Denied.")
+                            st.rerun()
+                with c3:
+                    if st.button("💰 Mark Paid Off", key=f"paid_{app['id']}"):
+                        if db_update_application_status(app["id"], "Paid Off"):
+                            log_activity(f"Application {app['id']} marked as Paid Off")
+                            st.success("Marked as Paid Off!")
+                            st.rerun()
+                with c4:
+                    if st.button("🗑️ Delete", key=f"delete_{app['id']}"):
+                        if db_delete_application(app["id"]):
+                            log_activity(f"Application {app['id']} deleted")
+                            st.warning("Deleted.")
+                            st.rerun()
     else:
         st.write("No active applications.")
- 
+
     st.divider()
- 
-    st.markdown("### ✅ Paid Off Applications")
+
+    st.markdown("### ✅ Approved Applications")
+    if approved_apps:
+        for app in approved_apps:
+            with st.expander(f"{app['id']} — {app['applicant']} — ${app['amount']:,.0f}"):
+                st.write(f"**Status:** {app['status']}")
+                st.write(f"**Loan Amount:** ${app['amount']:,.0f}")
+                st.write(f"**Purpose:** {app.get('purpose', 'N/A')}")
+                c1, c2 = st.columns(2)
+                with c1:
+                    if st.button("💰 Mark Paid Off", key=f"paid2_{app['id']}"):
+                        if db_update_application_status(app["id"], "Paid Off"):
+                            log_activity(f"Application {app['id']} marked as Paid Off")
+                            st.rerun()
+                with c2:
+                    if st.button("🗑️ Delete", key=f"del2_{app['id']}"):
+                        if db_delete_application(app["id"]):
+                            log_activity(f"Application {app['id']} deleted")
+                            st.rerun()
+    else:
+        st.write("No approved applications yet.")
+
+    st.divider()
+
+    st.markdown("### ❌ Denied Applications")
+    if denied_apps:
+        for app in denied_apps:
+            with st.expander(f"{app['id']} — {app['applicant']} — ${app['amount']:,.0f}"):
+                st.write(f"**Status:** {app['status']}")
+                st.write(f"**Loan Amount:** ${app['amount']:,.0f}")
+                st.write(f"**Recommendation:** {app.get('recommendation', 'N/A')}")
+                if st.button("🗑️ Delete", key=f"del_denied_{app['id']}"):
+                    if db_delete_application(app["id"]):
+                        log_activity(f"Application {app['id']} deleted")
+                        st.rerun()
+    else:
+        st.write("No denied applications.")
+
+    st.divider()
+
+    st.markdown("### 💰 Paid Off Applications")
     if paid_apps:
         for app in paid_apps:
             with st.expander(f"{app['id']} — {app['applicant']} — ${app['amount']:,.0f}"):
                 st.write(f"**Status:** {app['status']}")
                 st.write(f"**Loan Amount:** ${app['amount']:,.0f}")
                 st.write(f"**Return Earned:** {app.get('expected_return', 0)}%")
+                if st.button("🗑️ Delete", key=f"del_paid_{app['id']}"):
+                    if db_delete_application(app["id"]):
+                        log_activity(f"Application {app['id']} deleted")
+                        st.rerun()
     else:
         st.write("No paid off applications yet.")
- 
+
     st.divider()
- 
+
+    st.markdown("### 📊 Historical Loan Portfolio Reference")
+    with st.spinner("Loading portfolio data..."):
+        metrics = db_get_portfolio_metrics()
+
+    if metrics:
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Total Historical Loans", f"{metrics['total_apps']:,}")
+        col2.metric("Avg Loan Amount", f"${metrics['avg_loan']:,.0f}")
+        col3.metric("Avg FICO Score", f"{metrics['avg_fico']:.0f}")
+        col4.metric("Avg Annual Income", f"${metrics['avg_income']:,.0f}")
+        col5, col6, col7, col8 = st.columns(4)
+        col5.metric("Avg DTI", f"{metrics['avg_dti']:.1f}%")
+        col6.metric("Avg Revolving Util.", f"{metrics['avg_revol']:.1f}%")
+        if metrics["approval_rate"] is not None:
+            col7.metric("Approval Rate", f"{metrics['approval_rate']:.1f}%")
+        if metrics["top_purpose"]:
+            col8.metric("Top Loan Purpose", metrics["top_purpose"].replace("_", " ").title())
+    else:
+        st.info("Historical portfolio data unavailable.")
+
+    st.divider()
+
     st.markdown("### 🕐 Recent Activity")
     logs = db_get_activity_logs()
     if logs:
@@ -529,43 +767,11 @@ def underwriter_dashboard():
             st.write(f"✅ {item['message']} — {ts}")
     else:
         st.write("No activity yet.")
- 
+
     if st.button("Log Out"):
-        st.session_state.current_user = None
-        st.session_state.screen = "welcome"
-        st.rerun()
- 
-# --- Underwriter New Application Screen ---
-def new_application_screen():
-    st.title("LendGuard")
-    st.markdown("### ➕ New Application (Underwriter)")
-    applicant = st.text_input("Applicant Name")
-    applicant_email = st.text_input("Applicant Email")
-    amount = st.number_input("Loan Amount ($)", min_value=1000, max_value=1000000, step=1000)
-    expected_return = st.slider("Expected Return (%)", min_value=1.0, max_value=20.0, step=0.1)
-    if st.button("Submit Application", use_container_width=True):
-        if not applicant:
-            st.error("Please enter an applicant name.")
-        else:
-            app_id = db_get_next_app_id()
-            user = st.session_state.current_user
-            app_data = {
-                "id": app_id,
-                "applicant": applicant,
-                "applicant_email": applicant_email,
-                "amount": amount,
-                "status": "Active",
-                "expected_return": expected_return,
-                "submitted_by": user["email"],
-            }
-            db_save_application(app_data)
-            log_activity(f"New application {app_id} submitted for {applicant}")
-            st.session_state.screen = "dashboard"
-            st.rerun()
-    if st.button("← Back to Dashboard"):
-        st.session_state.screen = "dashboard"
-        st.rerun()
- 
+        logout()
+
+
 # --- Customer Loans Screen ---
 def loans_screen():
     user = st.session_state.current_user
@@ -582,7 +788,8 @@ def loans_screen():
     if st.button("← Back to Dashboard"):
         st.session_state.screen = "dashboard"
         st.rerun()
- 
+
+
 # --- Customer Active Applications Screen ---
 def active_screen():
     user = st.session_state.current_user
@@ -602,24 +809,24 @@ def active_screen():
     if st.button("← Back to Dashboard"):
         st.session_state.screen = "dashboard"
         st.rerun()
- 
+
+
 # --- All Submitted Applications Screen (Underwriter) ---
 def all_applications_screen():
     st.title("LendGuard")
     st.markdown("### 📋 All Submitted Applications")
- 
+
     apps = db_get_applications()
- 
+
     if not apps:
         st.write("No applications submitted yet.")
     else:
-        # Filter options
-        status_filter = st.selectbox("Filter by status", ["All", "Active", "Paid Off"])
+        status_filter = st.selectbox("Filter by status", ["All", "Active", "Approved", "Denied", "Paid Off"])
         filtered = apps if status_filter == "All" else [a for a in apps if a["status"] == status_filter]
- 
+
         st.markdown(f"Showing **{len(filtered)}** application(s)")
         st.divider()
- 
+
         for app in filtered:
             label = f"{app['id']} — {app['applicant']} — ${app['amount']:,.0f} — {app['status']}"
             with st.expander(label):
@@ -642,13 +849,37 @@ def all_applications_screen():
                         st.write(f"**Email:** {app['applicant_email']}")
                     if app.get("applicant_phone"):
                         st.write(f"**Phone:** {app['applicant_phone']}")
-                ts = app["created_at"][:10] if app.get("created_at") else "N/A"
-                st.write(f"**Submitted:** {ts}")
- 
+                    ts = app["created_at"][:10] if app.get("created_at") else "N/A"
+                    st.write(f"**Submitted:** {ts}")
+
+                st.markdown("**Actions:**")
+                c1, c2, c3, c4 = st.columns(4)
+                with c1:
+                    if st.button("✅ Approve", key=f"all_approve_{app['id']}"):
+                        if db_update_application_status(app["id"], "Approved"):
+                            log_activity(f"Application {app['id']} approved")
+                            st.rerun()
+                with c2:
+                    if st.button("❌ Deny", key=f"all_deny_{app['id']}"):
+                        if db_update_application_status(app["id"], "Denied"):
+                            log_activity(f"Application {app['id']} denied")
+                            st.rerun()
+                with c3:
+                    if st.button("💰 Paid Off", key=f"all_paid_{app['id']}"):
+                        if db_update_application_status(app["id"], "Paid Off"):
+                            log_activity(f"Application {app['id']} marked Paid Off")
+                            st.rerun()
+                with c4:
+                    if st.button("🗑️ Delete", key=f"all_delete_{app['id']}"):
+                        if db_delete_application(app["id"]):
+                            log_activity(f"Application {app['id']} deleted")
+                            st.rerun()
+
     if st.button("← Back to Dashboard"):
         st.session_state.screen = "dashboard"
         st.rerun()
- 
+
+
 # --- Router ---
 if st.session_state.screen == "welcome":
     welcome_screen()
@@ -664,7 +895,5 @@ elif st.session_state.screen == "loans":
     loans_screen()
 elif st.session_state.screen == "active":
     active_screen()
-elif st.session_state.screen == "new_application":
-    new_application_screen()
 elif st.session_state.screen == "all_applications":
     all_applications_screen()
