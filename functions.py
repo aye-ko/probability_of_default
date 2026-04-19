@@ -6,6 +6,8 @@ from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 from urllib.parse import quote_plus
 import streamlit as st
+import os
+
 
 load_dotenv()
 model = joblib.load('model.pkl')  # predicts probability of default
@@ -162,7 +164,7 @@ def create_db_connection():
         supabase_port = st.secrets["supabase_port"]
         supabase_name = st.secrets["supabase_dbname"]
         
-    except:
+    except KeyError:
         load_dotenv()
         supabase_pwd = quote_plus(os.getenv("supabase_pwd"))
         supabase_user = os.getenv("supabase_user")
@@ -188,9 +190,9 @@ def create_customer(engine, customer_fname, customer_lname, customer_email, cust
                 'customer_password': customer_password
             })
             connection.commit()
-            return "Customer created successfully"
+            return True, "Customer created successfully"
     except Exception as e:
-        return f"Error creating customer: {str(e)}"
+        return False, f"Error creating customer: {str(e)}"
     
 def login_customer(engine, customer_email, customer_password):
     try:
@@ -210,6 +212,9 @@ def login_customer(engine, customer_email, customer_password):
     
 def get_customer(engine, customer_email=None, customer_id=None, customer_phone=None):
     try:
+        if customer_email is None and customer_id is None and customer_phone is None:
+            return False, "At least one identifier (email, id, or phone) must be provided"
+            
         with engine.connect() as connection:
             result = connection.execute(
                 text("SELECT * FROM customer where customer_email = :customer_email OR customer_id = :customer_id OR customer_phone = :customer_phone"),
@@ -245,19 +250,22 @@ def update_customer(engine, customer_id, customer_email=None, customer_phone=Non
                 values["customer_password"] = customer_password
                 
             if not update_fields:
-                return "No fields to update"
+                return False, "No fields to update"
             
             connection.execute(
                 text(f"UPDATE customer SET {', '.join(update_fields)} WHERE customer_id = :customer_id"),
                 values
             )
             connection.commit()
-            return "Customer updated successfully"
+            return True, "Customer updated successfully"
     except Exception as e:
-        return f"Error updating customer: {str(e)}"
+        return False, f"Error updating customer: {str(e)}"
     
 def delete_customer(engine, customer_id=None, customer_email=None, customer_phone=None):
     try:
+        if customer_email is None and customer_id is None and customer_phone is None:
+            return False, "At least one identifier (email, id, or phone) must be provided"
+        
         with engine.connect() as connection:
             connection.execute(
                 text("DELETE FROM customer WHERE customer_id = :customer_id OR customer_phone = :customer_phone OR customer_email = :customer_email"),
@@ -266,9 +274,9 @@ def delete_customer(engine, customer_id=None, customer_email=None, customer_phon
                 "customer_phone": customer_phone}
             )
             connection.commit()
-            return "Customer deleted successfully"
+            return True, "Customer deleted successfully"
     except Exception as e:
-        return f"Error deleting customer: {str(e)}"
+        return False, f"Error deleting customer: {str(e)}"
     
     
     # Create Employee, Get Employee, Update Employee, Delete Employee functions would be similar to the above functions but for the employee table instead of the customer table.
@@ -278,7 +286,7 @@ def create_employee(engine, employee_fname, employee_lname, employee_email, empl
         with engine.connect() as connection:
             result = connection.execute(text("""
                 INSERT INTO employee (employee_fname, employee_lname, employee_email, employee_phone, employee_password, isManager)
-                VALUES (:employee_fname, :employee_lname, :employee_email, :employee_phone, :employee_password, :boolean)
+                VALUES (:employee_fname, :employee_lname, :employee_email, :employee_phone, :employee_password, :isManager)
                 RETURNING employee_id;
             """), {
                 'employee_fname': employee_fname,
@@ -286,14 +294,14 @@ def create_employee(engine, employee_fname, employee_lname, employee_email, empl
                 'employee_email': employee_email,
                 'employee_phone': employee_phone,
                 'employee_password': employee_password,
-                'isManager': boolean(isManager)
+                'isManager': isManager
             })
             connection.commit()
-            return "Employee created successfully"
+            return True, "Employee created successfully"
     except Exception as e:
-        return f"Error creating employee: {str(e)}"
+        return False, f"Error creating employee: {str(e)}"
         
-def update_employee(engine, employee_id, employee_email=None, employee_phone=None, employee_password=None):
+def update_employee(engine, employee_id, employee_email=None, employee_phone=None, employee_password=None, isManager=None):
     try:
         with engine.connect() as connection:
             update_fields = []
@@ -310,18 +318,22 @@ def update_employee(engine, employee_id, employee_email=None, employee_phone=Non
             if employee_password is not None:
                 update_fields.append("employee_password = :employee_password")
                 values["employee_password"] = employee_password
+            
+            if isManager is False or isManager is True:
+                update_fields.append("isManager = :isManager")
+                values["isManager"] = True if isManager else False
                 
             if not update_fields:
-                return "No fields to update"
+                return False, "No fields to update"
             
             connection.execute(
                 text(f"UPDATE employee SET {', '.join(update_fields)} WHERE employee_id = :employee_id"),
                 values
             )
             connection.commit()
-            return "Employee updated successfully"
+            return True, "Employee updated successfully"
     except Exception as e:
-        return f"Error updating employee: {str(e)}"
+        return False, f"Error updating employee: {str(e)}"
     
 def get_employee(engine, employee_email=None, employee_id=None, employee_phone=None):
     try:
@@ -347,9 +359,9 @@ def delete_employee(engine, employee_id):
             connection.execute(text("DELETE FROM employee WHERE employee_id = :employee_id"), 
                             {"employee_id": employee_id})
             connection.commit()
-            return "Employee deleted successfully"
+            return True, "Employee deleted successfully"
     except Exception as e:
-        return f"Error deleting employee: {str(e)}"
+        return False, f"Error deleting employee: {str(e)}"
     
 def create_loan_application(engine, customer_id, loan_amnt, dti, fico_range_low, annual_inc, revol_util,
                             pub_rec_bankruptcies, tax_liens, total_il_high_credit_limit,
@@ -381,9 +393,9 @@ def create_loan_application(engine, customer_id, loan_amnt, dti, fico_range_low,
             })
                 
             connection.commit()
-            return "Loan application created successfully"
+            return True, "Loan application created successfully"
     except Exception as e:
-        return f"Error creating loan application: {str(e)}" 
+        return False, f"Error creating loan application: {str(e)}" 
         
 def get_loan_application(engine, application_id):
     try:
@@ -407,9 +419,9 @@ def delete_loan_application(engine, application_id):
             connection.execute(text("DELETE FROM loan_application WHERE application_id = :application_id"), 
                             {"application_id": application_id})
             connection.commit()
-            return "Loan application deleted successfully"
+            return True, "Loan application deleted successfully"
     except Exception as e:
-        return f"Error deleting loan application: {str(e)}"
+        return False, f"Error deleting loan application: {str(e)}"
     
 def update_loan_application(engine, application_id, loan_amnt=None, dti=None, fico_range_low=None, annual_inc=None, revol_util=None,
                             pub_rec_bankruptcies=None, tax_liens=None, total_il_high_credit_limit=None,
@@ -472,26 +484,35 @@ def update_loan_application(engine, application_id, loan_amnt=None, dti=None, fi
                 values["verification_status"] = verification_status 
                 
             if not update_fields:
-                return "No fields to update"
+                return False, "No fields to update"
             
             connection.execute(
                 text(f"UPDATE loan_application SET {', '.join(update_fields)} WHERE application_id = :application_id"),
                 values
             )   
             connection.commit()
-            return "Loan application updated successfully"
+            return True, "Loan application updated successfully"
     except Exception as e:
-        return f"Error updating loan application: {str(e)}"
+        return False, f"Error updating loan application: {str(e)}"
     
-def approve_loan_application(engine, application_id):
+def approve_loan_application(engine, employee_id, application_id):
+    
     try:
+        
         with engine.connect() as connection:
-            connection.execute(text("UPDATE loan_application SET status = 'approved' WHERE application_id = :application_id"), 
-                            {"application_id": application_id})
+            
+            connection.execute(text("UPDATE application SET status = 'approved' WHERE application_id = :application_id"),
+                            {'application_id': application_id})
+            connection.execute(text("""
+                INSERT INTO decision (application_id, employee_id, is_approved)
+                VALUES (:application_id, :employee_id, :is_approved);
+            """),
+                {"application_id": application_id, "employee_id": employee_id, "is_approved": True})
             connection.commit()
-            return "Loan application approved successfully"
+            return True, "Loan application approved successfully"
+        
     except Exception as e:
-        return f"Error approving loan application: {str(e)}"
+        return False, f"Error approving loan application: {str(e)}"
     
 def deny_loan_application(engine, employee_id, application_id, model, input_df):
     
@@ -507,9 +528,9 @@ def deny_loan_application(engine, employee_id, application_id, model, input_df):
             """),
                 {"application_id": application_id, "employee_id": employee_id, "is_approved": False, "reason": reasoning})
             connection.commit()
-            return "Loan application denied successfully"
+            return True, "Loan application denied successfully"
         
     except Exception as e:
-        return f"Error denying loan application: {str(e)}"  
+        return False, f"Error denying loan application: {str(e)}"  
 
     
