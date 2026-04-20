@@ -1,10 +1,8 @@
 import streamlit as st
 import pandas as pd
-import uuid
 from config import supabase, supabase_admin
 
-
-# ── Customer ──────────────────────────────────────────────────────────────────
+# ── Customer ───────────────────────────────────────────────────────────────────
 
 def db_get_customer_by_email(email):
     try:
@@ -14,7 +12,6 @@ def db_get_customer_by_email(email):
         print(f"db_get_customer_by_email error: {e}")
         return None
 
-
 def db_create_customer(fname, lname, email, phone):
     try:
         res = supabase_admin.table("customer").insert({
@@ -22,14 +19,14 @@ def db_create_customer(fname, lname, email, phone):
             "customer_lname": lname,
             "customer_email": email,
             "customer_phone": phone,
+            "company_id": 1         # <-- Satisfies the Non-Nullable constraint
         }).execute()
         return res.data[0] if res.data else None
     except Exception as e:
         st.error(f"db_create_customer error: {e}")
         return None
 
-
-# ── Employee (Underwriter) ─────────────────────────────────────────────────────
+# ── Employee ───────────────────────────────────────────────────────────────────
 
 def db_get_employee_by_email(email):
     try:
@@ -39,6 +36,20 @@ def db_get_employee_by_email(email):
         print(f"db_get_employee_by_email error: {e}")
         return None
 
+def db_create_employee(fname, lname, email, phone):
+    try:
+        res = supabase_admin.table("employee").insert({
+            "employee_fname": fname,
+            "employee_lname": lname,
+            "employee_email": email,
+            "employee_phone": phone,
+            "company_id": 1,        # <-- Satisfies the Non-Nullable constraint
+            "is_manager": False     # <-- Satisfies the Non-Nullable constraint
+        }).execute()
+        return res.data[0] if res.data else None
+    except Exception as e:
+        st.error(f"db_create_employee error: {e}")
+        return None
 
 def db_get_underwriter_email():
     try:
@@ -47,7 +58,6 @@ def db_get_underwriter_email():
     except Exception as e:
         print(f"db_get_underwriter_email error: {e}")
         return None
-
 
 # ── Applications ───────────────────────────────────────────────────────────────
 
@@ -59,7 +69,6 @@ def db_get_next_app_id():
     except:
         return 1
 
-
 def db_save_application(app_data):
     try:
         if "application_id" not in app_data or app_data["application_id"] is None:
@@ -70,9 +79,7 @@ def db_save_application(app_data):
         st.error(f"db_save_application error: {e}")
         return None
 
-
 def db_get_applications():
-    """All applications joined with customer info and decision status."""
     try:
         res = supabase_admin.table("application").select(
             "*, customer(customer_fname, customer_lname, customer_email), "
@@ -82,7 +89,6 @@ def db_get_applications():
     except Exception as e:
         print(f"db_get_applications error: {e}")
         return []
-
 
 def db_get_applications_by_customer(customer_id):
     try:
@@ -94,13 +100,11 @@ def db_get_applications_by_customer(customer_id):
         print(f"db_get_applications_by_customer error: {e}")
         return []
 
-
 # ── Decisions ──────────────────────────────────────────────────────────────────
 
 def db_save_decision(application_id, employee_id, is_approved, reason=""):
     try:
         res = supabase_admin.table("decision").insert({
-            # REMOVE THIS LINE: "decision_id": str(uuid.uuid4()),
             "application_id": application_id,
             "employee_id":    employee_id,
             "is_approved":    is_approved,
@@ -111,6 +115,20 @@ def db_save_decision(application_id, employee_id, is_approved, reason=""):
         st.error(f"db_save_decision error: {e}")
         return None
 
+def approve_loan_application(engine=None, application_id=None, employee_id=None):
+    try:
+        return db_save_decision(application_id, employee_id, is_approved=True)
+    except Exception as e:
+        st.error(f"approve_loan_application error: {e}")
+        return None
+
+def deny_loan_application(engine=None, application_id=None, employee_id=None, reason=""):
+    try:
+        return db_save_decision(application_id, employee_id, is_approved=False, reason=reason)
+    except Exception as e:
+        st.error(f"deny_loan_application error: {e}")
+        return None
+
 def db_delete_decision(application_id):
     try:
         supabase_admin.table("decision").delete().eq("application_id", application_id).execute()
@@ -119,17 +137,14 @@ def db_delete_decision(application_id):
         print(f"db_delete_decision error: {e}")
         return False
 
-
-def db_delete_application(application_id):
-    """Deletes decision first (FK constraint), then the application."""
+def delete_loan_application(engine=None, application_id=None):
     try:
         db_delete_decision(application_id)
         supabase_admin.table("application").delete().eq("application_id", application_id).execute()
         return True
     except Exception as e:
-        st.error(f"db_delete_application error: {e}")
+        st.error(f"delete_loan_application error: {e}")
         return False
-
 
 # ── Activity Logs ──────────────────────────────────────────────────────────────
 
@@ -141,7 +156,6 @@ def db_log_activity(user_email, message):
         }).execute()
     except Exception as e:
         print(f"db_log_activity error: {e}")
-
 
 def db_get_activity_logs(user_email=None):
     try:
@@ -159,13 +173,12 @@ def db_get_activity_logs(user_email=None):
         print(f"db_get_activity_logs error: {e}")
         return []
 
-
 # ── Portfolio Metrics ──────────────────────────────────────────────────────────
 
 def db_get_portfolio_metrics():
     try:
         res = supabase_admin.table("application").select(
-            "loan_amount, dti, fico_range_low, annual_inc, revol_util, purpose, home_ownership"
+            "loan_amount, dti, fico_range_low, annual_inc, revol_util, purpose"
         ).execute()
         apps = res.data or []
         if not apps:
@@ -205,3 +218,14 @@ def db_get_portfolio_metrics():
     except Exception as e:
         print(f"db_get_portfolio_metrics error: {e}")
         return None
+
+# ── Legacy Engine Bridge (Kept so ml.py doesn't break) ──────────────────────
+def create_db_connection():
+    return None
+
+def get_loan_application(engine=None, application_id=None):
+    try:
+        res = supabase_admin.table("application").select("*").eq("application_id", application_id).execute()
+        return (True, res.data[0]) if res.data else (False, "Application not found")
+    except Exception as e:
+        return False, f"get_loan_application error: {e}"
