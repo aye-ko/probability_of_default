@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import joblib
 from optbinning import OptimalBinning # for binning total_il_high_credit_limit
-from auth import login_user
+
 from firebase_admin_setup import verify_token
 import re # for email validation
 
