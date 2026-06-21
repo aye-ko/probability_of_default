@@ -31,10 +31,9 @@ Saves underwriters' time when reviewing multiple loan applications on who to qui
 4. Evaluation (Recall-focused for catching defaults)
 
 ## Key Findings
-<<<<<<< HEAD
+
 - 60-month loans are significantly riskier than 36-month loans
 - Small business loans have the highest default rate
-=======
 - 60-month loans are significantly riskier than 36-month loans
 - Small business loans have the highest default rate
 - Verified income correlates with MORE defaults (selection bias)
